@@ -1,0 +1,23 @@
+{
+  "name": "personal-pqc-drive-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Zero-knowledge file transfer with hybrid post-quantum encryption (X25519 + ML-KEM-768)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^1.2.1",
+    "@noble/curves": "^1.8.1",
+    "@noble/hashes": "^1.7.1",
+    "@noble/post-quantum": "^0.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}
