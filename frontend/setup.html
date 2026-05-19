@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal PQC Drive - 受信者セットアップ</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #161a22;
+      --border: #2a313d;
+      --text: #e6e9ef;
+      --muted: #8a92a3;
+      --accent: #6ea8ff;
+      --ok: #5fd38a;
+      --err: #ff6b6b;
+      --warn: #ffd166;
+      --danger: #d44a4a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+                   "Yu Gothic", Meiryo, sans-serif;
+      line-height: 1.6;
+    }
+    main {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    h2 { margin: 0 0 12px; font-size: 16px; color: var(--accent); }
+    p { margin: 0 0 12px; }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .muted { color: var(--muted); }
+    .small { font-size: 11px; }
+    .error {
+      background: rgba(255, 107, 107, 0.12);
+      border: 1px solid var(--err);
+      color: var(--err);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    button {
+      border: 0;
+      border-radius: 4px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button#generate-btn,
+    button.primary {
+      background: var(--accent);
+      color: #0a0e15;
+    }
+    button.danger {
+      background: transparent;
+      color: var(--err);
+      border: 1px solid var(--err);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin: 16px 0 8px;
+    }
+    footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    code {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>受信者セットアップ</h1>
+  <p class="subtitle">
+    Personal PQC Drive で安全にファイルを受け取るために、ブラウザ内で鍵ペアを生成します。
+    鍵はこのブラウザの IndexedDB に保管され、サーバーには一切送信されません。
+  </p>
+
+  <div id="error" class="error" style="display: none;"></div>
+
+  <section id="empty-panel" class="panel" style="display: none;">
+    <h2>鍵がまだ生成されていません</h2>
+    <p>
+      ボタンを押すと、X25519 と ML-KEM-768 のハイブリッド鍵ペアを生成し、
+      このブラウザに保管します。生成は数十ミリ秒で完了します。
+    </p>
+    <button id="generate-btn">鍵ペアを生成して保管</button>
+  </section>
+
+  <section id="present-panel" class="panel" style="display: none;">
+    <h2>鍵ペアが保管されています</h2>
+    <p id="created-at" class="muted"></p>
+    <p>
+      送信者にファイルを送ってもらうには、下のボタンで公開鍵を JSON として
+      ダウンロードし、別経路 (メール / メッセンジャー等) で送信者に渡してください。
+    </p>
+    <div class="actions">
+      <button id="export-btn" class="primary">公開鍵をエクスポート (JSON)</button>
+      <button id="reset-btn" class="danger">鍵をリセット</button>
+    </div>
+    <p class="muted small">
+      ※ リセットすると、この鍵で暗号化された過去のファイルは復号できなくなります。
+    </p>
+  </section>
+
+  <footer>
+    ゼロ知識性: 秘密鍵はサーバーに送信されません。<br>
+    フェーズ2では IndexedDB に平文保管。パスフレーズ暗号化はフェーズ3で実装予定。
+  </footer>
+</main>
+<script type="module" src="/src/setup.ts"></script>
+</body>
+</html>

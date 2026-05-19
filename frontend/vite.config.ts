@@ -1,17 +1,22 @@
 import { defineConfig } from 'vite';
+import { resolve } from 'node:path';
 
-// 現フェーズではエントリ HTML は未作成。Vite はプロジェクトルートおよび
-// サブディレクトリにある *.html を自動的にマルチページのエントリとして扱う
-// (https://vite.dev/guide/build.html#multi-page-app)。
-// 後で index.html / setup.html / download.html を追加すれば、追加設定不要で
-// それぞれが独立したエントリポイントとしてビルドされる。
+// マルチページ構成 (https://vite.dev/guide/build.html#multi-page-app)。
+// production build では rollupOptions.input でエントリ HTML を明示する必要がある
+// (dev server は root の *.html を自動検出するが、build は別)。
+//
+// base: './' により dist/ を任意のサブディレクトリ配下にデプロイしても動作する
+// (mixhost 上で /personal-pqc-drive/frontend/dist/ のような階層に置く想定)。
 export default defineConfig({
-  // dist/ を任意のサブディレクトリ配下にデプロイしても動くよう、
-  // 全アセット参照を相対パス (./assets/...) で生成する。
-  // mixhost 上で /personal-pqc-drive/frontend/dist/ のような階層に置く想定。
   base: './',
   build: {
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        main:  resolve(import.meta.dirname, 'index.html'),
+        setup: resolve(import.meta.dirname, 'setup.html'),
+      },
+    },
   },
 });
