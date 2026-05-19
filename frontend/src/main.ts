@@ -17,7 +17,15 @@ import {
   encryptForRecipient,
   generateReceiverKeyPair,
 } from './crypto.ts';
-import { CryptoError, type FileMetadata } from './types.ts';
+import {
+  deleteKeyPair,
+  exportPublicKeys,
+  getKeyPairCreatedAt,
+  hasKeyPair,
+  loadKeyPair,
+  saveKeyPair,
+} from './keystore.ts';
+import { CryptoError, KeystoreError, type FileMetadata } from './types.ts';
 
 const utf8Encoder = new TextEncoder();
 
@@ -172,6 +180,113 @@ async function runTests(): Promise<void> {
     }
   } catch (e) {
     log(`✗ セットアップで例外: ${(e as Error).message}`, 'err');
+    console.error(e);
+  }
+
+  // ===========================================================================
+  // テスト5+: keystore (IndexedDB 永続化、crypto.ts 統合)
+  // ===========================================================================
+  log('テスト5+: keystore (IndexedDB 永続化)', 'step');
+  try {
+    // 5.1: 前段クリア (前回のテスト残骸を消す)
+    log('5.1: deleteKeyPair() で開始前にクリーンスレートに', 'muted');
+    await deleteKeyPair();
+
+    // 5.2: hasKeyPair が false
+    const initiallyEmpty = await hasKeyPair();
+    if (initiallyEmpty === false) {
+      log('✓ 5.2: hasKeyPair() === false (削除直後)', 'ok');
+    } else {
+      log(`✗ 5.2: 想定外、hasKeyPair=${initiallyEmpty}`, 'err');
+    }
+
+    // 5.3: 鍵生成 + saveKeyPair
+    const kp = generateReceiverKeyPair();
+    await saveKeyPair(kp);
+    log('✓ 5.3: generateReceiverKeyPair() → saveKeyPair() 完了', 'ok');
+
+    // 5.4: hasKeyPair が true
+    const present = await hasKeyPair();
+    if (present === true) {
+      log('✓ 5.4: hasKeyPair() === true (保存後)', 'ok');
+    } else {
+      log(`✗ 5.4: 想定外、保存後も hasKeyPair=${present}`, 'err');
+    }
+
+    // 5.5: getKeyPairCreatedAt が Date
+    const createdAt = await getKeyPairCreatedAt();
+    if (createdAt instanceof Date) {
+      log(`✓ 5.5: getKeyPairCreatedAt() = ${createdAt.toISOString()}`, 'ok');
+    } else {
+      log(`✗ 5.5: 想定外、createdAt が Date でない (${createdAt})`, 'err');
+    }
+
+    // 5.6: loadKeyPair でバイト一致
+    const loaded = await loadKeyPair();
+    if (loaded === null) {
+      log('✗ 5.6: 想定外、loadKeyPair() が null', 'err');
+    } else {
+      const allMatch =
+        bytesEqual(kp.pub.x_pk, loaded.pub.x_pk) &&
+        bytesEqual(kp.pub.m_pk, loaded.pub.m_pk) &&
+        bytesEqual(kp.sec.x_sk, loaded.sec.x_sk) &&
+        bytesEqual(kp.sec.m_sk, loaded.sec.m_sk);
+      if (allMatch) {
+        log('✓ 5.6: loadKeyPair() で 4 つのバイト列すべて一致', 'ok');
+      } else {
+        log('✗ 5.6: ロード後のバイト列に不一致あり', 'err');
+      }
+
+      // 5.7: 統合テスト - ロードした鍵で crypto.ts 暗号往復
+      try {
+        const pt = utf8Encoder.encode('keystore-loaded key roundtrip integration test');
+        const meta = buildMetadata('integration.txt', 'text/plain', pt.length);
+        const packed = encryptForRecipient(loaded.pub, pt, meta);
+        const result = decryptAsRecipient(packed, loaded.sec);
+        if (bytesEqual(pt, result.plaintext)) {
+          log(`✓ 5.7: ロード鍵で crypto.ts 暗号往復成功 (packed=${packed.length}B)`, 'ok');
+        } else {
+          log('✗ 5.7: ロード鍵での往復で本体不一致', 'err');
+        }
+      } catch (e) {
+        if (e instanceof CryptoError) {
+          log(`✗ 5.7: CryptoError code=${e.code}: ${e.message}`, 'err');
+        } else {
+          log(`✗ 5.7: 想定外の例外: ${(e as Error).message}`, 'err');
+        }
+      }
+    }
+
+    // 5.8: exportPublicKeys の Base64 出力
+    const exported = await exportPublicKeys();
+    if (exported === null) {
+      log('✗ 5.8: 想定外、exportPublicKeys() が null', 'err');
+    } else {
+      const xLen = atob(exported.x_pk_b64).length;
+      const mLen = atob(exported.m_pk_b64).length;
+      if (xLen === 32 && mLen === 1184) {
+        log(`✓ 5.8: Base64 復号後 x_pk=${xLen}B / m_pk=${mLen}B`, 'ok');
+        log(`x_pk_b64 先頭16: ${exported.x_pk_b64.slice(0, 16)}... (全${exported.x_pk_b64.length} chars)`, 'muted');
+        log(`m_pk_b64 先頭16: ${exported.m_pk_b64.slice(0, 16)}... (全${exported.m_pk_b64.length} chars)`, 'muted');
+      } else {
+        log(`✗ 5.8: 復号後の長さが想定外 x=${xLen} m=${mLen}`, 'err');
+      }
+    }
+
+    // 5.9: deleteKeyPair → hasKeyPair が false に戻る
+    await deleteKeyPair();
+    const afterDelete = await hasKeyPair();
+    if (afterDelete === false) {
+      log('✓ 5.9: deleteKeyPair() 後に hasKeyPair() === false', 'ok');
+    } else {
+      log(`✗ 5.9: 想定外、削除後も hasKeyPair=${afterDelete}`, 'err');
+    }
+  } catch (e) {
+    if (e instanceof KeystoreError) {
+      log(`✗ KeystoreError: code=${e.code}, message="${e.message}"`, 'err');
+    } else {
+      log(`✗ 想定外の例外: ${(e as Error).message}`, 'err');
+    }
     console.error(e);
   }
 

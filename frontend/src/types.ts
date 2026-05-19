@@ -115,3 +115,41 @@ export class CryptoError extends Error {
     super(message, options);
   }
 }
+
+// =============================================================================
+// 鍵保管 (keystore) のエラー型
+// =============================================================================
+
+/**
+ * keystore モジュールが throw するエラーの分類コード。
+ *
+ *  - `NOT_FOUND`:           取得対象の鍵が存在しない (将来の strictGet API 用、現状未使用)
+ *  - `STORAGE_FAILED`:      IndexedDB の I/O 失敗 (詳細は cause 参照)
+ *  - `STORAGE_UNAVAILABLE`: IndexedDB が使えない (シークレットウィンドウや古いブラウザ等)
+ *  - `SCHEMA_MISMATCH`:     保存データの schemaVersion が現実装と非互換
+ *  - `EXPORT_INVALID`:      公開鍵の Base64 エクスポート失敗
+ */
+export type KeystoreErrorCode =
+  | 'NOT_FOUND'
+  | 'STORAGE_FAILED'
+  | 'STORAGE_UNAVAILABLE'
+  | 'SCHEMA_MISMATCH'
+  | 'EXPORT_INVALID';
+
+/**
+ * keystore モジュール固有のエラー。
+ *
+ * 原因 (IndexedDB の DOMException 等) は ES2022 の Error.cause で保持する。
+ * 設計は CryptoError と対称 (UI 側は code で分岐、デバッグ時は cause を辿る)。
+ */
+export class KeystoreError extends Error {
+  override readonly name = 'KeystoreError';
+
+  constructor(
+    message: string,
+    public readonly code: KeystoreErrorCode,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
