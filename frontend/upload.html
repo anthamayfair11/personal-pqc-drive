@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal PQC Drive - 送信者: ファイルを暗号化して送る</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #161a22;
+      --border: #2a313d;
+      --text: #e6e9ef;
+      --muted: #8a92a3;
+      --accent: #6ea8ff;
+      --ok: #5fd38a;
+      --err: #ff6b6b;
+      --code: #1b2029;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+                   "Yu Gothic", Meiryo, sans-serif;
+      line-height: 1.6;
+    }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    h2 { margin: 0 0 12px; font-size: 16px; color: var(--accent); }
+    p  { margin: 0 0 12px; }
+    .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .muted { color: var(--muted); }
+    .small { font-size: 11px; }
+    .error {
+      background: rgba(255, 107, 107, 0.12);
+      border: 1px solid var(--err);
+      color: var(--err);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
+    button {
+      border: 0;
+      border-radius: 4px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      background: var(--accent);
+      color: #0a0e15;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    code {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.95em;
+      word-break: break-all;
+    }
+    a { color: var(--accent); }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 32px 16px;
+      text-align: center;
+      background: var(--code);
+      transition: border-color 0.15s, background 0.15s;
+      margin-bottom: 12px;
+    }
+    .dropzone.dragover {
+      border-color: var(--accent);
+      background: rgba(110, 168, 255, 0.06);
+    }
+    .dropzone p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+    .file-info {
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .file-info p { margin: 0 0 4px; }
+    .file-info p:last-child { margin-bottom: 0; }
+    footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>送信者: ファイルを暗号化して送る</h1>
+  <p class="subtitle">
+    受信者から事前にもらった公開鍵 JSON を読み込み、ファイルをブラウザ内で
+    ハイブリッドPQC暗号化します。サーバーには暗号化済みのバイナリしか渡りません。
+  </p>
+
+  <div id="error" class="error" style="display: none;"></div>
+
+  <!-- ステップA: 公開鍵読み込み -->
+  <section id="step-a" class="panel">
+    <h2>ステップ A: 受信者の公開鍵を読み込む</h2>
+    <p>
+      受信者から事前に共有された <code>personal-pqc-drive-pubkey-*.json</code> を
+      選択してください。鍵情報はこのページのメモリ上にだけ保持され、リロードで消えます。
+    </p>
+    <button id="load-pubkey-btn">受信者の公開鍵 JSON を選択</button>
+    <input type="file" id="pubkey-input" accept=".json,application/json" hidden>
+  </section>
+
+  <!-- ステップA結果 (読み込んだ公開鍵の情報) -->
+  <section id="pubkey-info" class="panel" style="display: none;">
+    <h2>読み込んだ公開鍵</h2>
+    <p id="pubkey-created-at" class="muted"></p>
+    <p>識別ID (x_pk_b64 先頭16文字): <code id="pubkey-id"></code></p>
+    <p class="small muted">
+      ※ 受信者と同じ鍵かを目視確認したいときは、受信者画面の x_pk_b64 と上の識別ID を見比べてください。
+    </p>
+    <p><a href="#" id="reload-pubkey-link">別の公開鍵を読み込む</a></p>
+  </section>
+
+  <!-- ステップB: ファイル選択 + 暗号化 -->
+  <section id="step-b" class="panel" style="display: none;">
+    <h2>ステップ B: ファイルを選択して暗号化</h2>
+    <div id="dropzone" class="dropzone">
+      <p>ここにファイルをドラッグ&ドロップ、または</p>
+      <button id="select-file-btn" class="secondary">ファイルを選択</button>
+      <input type="file" id="file-input" hidden>
+      <p class="small">上限: 100 MB / 1ファイル</p>
+    </div>
+    <div id="file-info" class="file-info" style="display: none;">
+      <p>選択中: <code id="file-name"></code></p>
+      <p class="muted small">
+        サイズ: <span id="file-size"></span> &nbsp;/&nbsp;
+        MIME: <code id="file-mime"></code>
+      </p>
+    </div>
+    <button id="encrypt-btn" disabled>暗号化してダウンロード</button>
+  </section>
+
+  <footer>
+    ゼロ知識: 暗号化はブラウザ内で完結し、鍵およびファイル平文はサーバーに送信されません。<br>
+    出力ファイル名は <code>ppqd-{ランダム英数字8文字}.ppqd</code> 形式。
+    元ファイル名は暗号化メタデータの中に格納されており、ファイル名からは内容が漏れません。
+  </footer>
+</main>
+<script type="module" src="/src/upload.ts"></script>
+</body>
+</html>
