@@ -1,0 +1,20 @@
+
+# Node.js / フロントエンドビルド成果物
+node_modules/
+dist/
+*.log
+
+# ストレージ領域 (暗号化済み一時ファイル) は .htaccess 以外を除外
+storage/*
+!storage/.htaccess
+
+# 本番用バックエンド設定 (DB認証情報等が入る予定)
+backend/config.php
+
+# OS / エディタの生成物
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/

@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Personal PQC Drive - Phase 1 Prototype</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161a22;
+    --border: #2a313d;
+    --text: #e6e9ef;
+    --muted: #8a92a3;
+    --accent: #6ea8ff;
+    --ok: #5fd38a;
+    --err: #ff6b6b;
+    --warn: #ffd166;
+    --code: #1b2029;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+                 "Yu Gothic", Meiryo, sans-serif;
+    line-height: 1.6;
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  h2 { margin: 24px 0 8px; font-size: 16px; color: var(--accent); }
+  .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 13px; }
+  .layout { display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  textarea, input[type="text"] {
+    width: 100%;
+    background: var(--code);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  textarea { min-height: 80px; resize: vertical; }
+  input[type="file"] { color: var(--muted); font-size: 12px; }
+  button {
+    background: var(--accent);
+    color: #0a0e15;
+    border: 0;
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: #2a313d; color: var(--text); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  #log {
+    background: var(--code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 75vh;
+    overflow-y: auto;
+  }
+  .log-line { margin-bottom: 2px; }
+  .log-step  { color: var(--accent); font-weight: 600; margin-top: 10px; }
+  .log-info  { color: var(--text); }
+  .log-data  { color: var(--muted); padding-left: 16px; }
+  .log-ok    { color: var(--ok); font-weight: 600; }
+  .log-err   { color: var(--err); font-weight: 600; }
+  .log-warn  { color: var(--warn); }
+  .hex { color: #b8c2d5; }
+  .log-test-header { color: var(--accent); font-weight: 600; margin-top: 12px; font-size: 13px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+  .log-test-item { color: var(--text); margin-top: 8px; font-weight: 500; }
+  .log-test-detail { color: var(--muted); padding-left: 18px; }
+  .log-test-pass { color: var(--ok); font-weight: 600; padding-left: 18px; }
+  .log-test-unexpected { color: var(--err); font-weight: 600; padding-left: 18px; }
+  .log-test-info { color: var(--muted); margin-left: 8px; }
+  .perf-table { border-collapse: collapse; margin: 12px 0; width: 100%; font-size: 12px; }
+  .perf-table th, .perf-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: right; }
+  .perf-table th { background: rgba(110,168,255,0.15); color: var(--accent); font-weight: 600; }
+  .perf-table td:first-child, .perf-table th:first-child { text-align: left; }
+  .perf-table tbody tr:nth-child(odd) { background: rgba(255,255,255,0.02); }
+  #status {
+    padding: 8px 12px;
+    border-radius: 4px;
+    background: var(--code);
+    font-size: 12px;
+    margin-bottom: 12px;
+    color: var(--muted);
+  }
+  #status.ready { color: var(--ok); }
+  #status.loading { color: var(--warn); }
+  #status.error { color: var(--err); }
+</style>
+</head>
+<body>
+<h1>Personal PQC Drive - Phase 1 Prototype</h1>
+<div class="subtitle">
+  ハイブリッドPQC鍵交換 (X25519 + ML-KEM-768) と ChaCha20-Poly1305 によるファイル暗号化の往復検証。
+  受信者役と送信者役を同一ページ内でシミュレートする。
+</div>
+
+<div class="layout">
+  <div class="panel">
+    <div id="status" class="loading">ライブラリ読み込み中...</div>
+
+    <label for="textInput">テストメッセージ(テキストモード)</label>
+    <textarea id="textInput">Hello, post-quantum world! 量子コンピュータの時代にも安全な通信を。</textarea>
+
+    <label for="fileInput" style="margin-top:12px">ファイルモード(任意・選択するとこちらを優先)</label>
+    <input type="file" id="fileInput">
+
+    <div class="row">
+      <button id="runBtn" disabled>暗号化往復テストを実行</button>
+      <button id="tamperBtn" disabled class="secondary">改ざん検出テスト</button>
+      <button id="wrongKeyBtn" disabled class="secondary">不正な鍵テスト</button>
+      <button id="perfBtn" disabled class="secondary">大容量性能測定</button>
+      <button id="clearBtn" class="secondary">ログクリア</button>
+    </div>
+
+    <p style="color: var(--muted); font-size:11px; margin-top:16px; margin-bottom:0;">
+      実行内容:<br>
+      1. 受信者が永続鍵ペア (X25519 + ML-KEM-768) を生成<br>
+      2. 送信者がエフェメラルX25519鍵を生成しハイブリッド鍵交換<br>
+      3. ファイル鍵で本体を、メタデータ鍵で属性情報をChaCha20-Poly1305暗号化<br>
+      4. 設計仕様のバイナリフォーマットへパック<br>
+      5. 受信者の秘密鍵でアンパック・復号<br>
+      6. 入力と出力をバイト単位で比較
+    </p>
+  </div>
+
+  <div class="panel">
+    <div id="log"></div>
+  </div>
+</div>
+
+<script type="module">
+// =============================================================================
+// 暗号ライブラリのロード
+// =============================================================================
+// @noble シリーズで統一: 純JS実装・監査済み・小さい依存
+//   - ml_kem768: NIST FIPS 203 準拠の ML-KEM-768 実装
+//   - x25519:    RFC 7748 準拠の Curve25519 ECDH
+//   - chacha20poly1305: RFC 8439 準拠の AEAD
+//   - hkdf+sha256: RFC 5869 準拠の鍵導出
+// 設計メモでは mlkem-wasm を例示しているが、本プロトタイプは
+// 単一HTMLでCDN完結させるため純JSの noble/post-quantum を採用する。
+// フェーズ2以降で WebCrypto への部分置換も検討可。
+
+import { ml_kem768 }        from 'https://esm.sh/@noble/post-quantum@0.4.1/ml-kem';
+import { x25519 }           from 'https://esm.sh/@noble/curves@1.8.1/ed25519';
+import { chacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.2.1/chacha';
+import { hkdf }             from 'https://esm.sh/@noble/hashes@1.7.1/hkdf';
+import { sha256 }           from 'https://esm.sh/@noble/hashes@1.7.1/sha2';
+
+// =============================================================================
+// 定数 (設計仕様)
+// =============================================================================
+const MAGIC        = new Uint8Array([0x50, 0x50, 0x51, 0x44]); // "PPQD"
+const VERSION      = 0x01;
+const ALG_ID       = 0x01; // X25519+ML-KEM-768 / ChaCha20-Poly1305 / HKDF-SHA256
+const HEADER_LEN   = 48;
+const X25519_PK_LEN     = 32;
+const MLKEM_CT_LEN      = 1088;
+const NONCE_LEN         = 12;
+const KEY_LEN           = 32;
+const HKDF_INFO_HYBRID   = 'personal-pqc-drive/hybrid-kex/v1';
+const HKDF_INFO_FILE     = 'file-key/v1';
+const HKDF_INFO_METADATA = 'metadata-key/v1';
+
+// =============================================================================
+// ユーティリティ
+// =============================================================================
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+function concat(...arrays) {
+  const len = arrays.reduce((s, a) => s + a.length, 0);
+  const out = new Uint8Array(len);
+  let off = 0;
+  for (const a of arrays) { out.set(a, off); off += a.length; }
+  return out;
+}
+
+function toHex(bytes, max = 32) {
+  const slice = bytes.length > max ? bytes.subarray(0, max) : bytes;
+  const hex = Array.from(slice).map(b => b.toString(16).padStart(2, '0')).join('');
+  return bytes.length > max ? `${hex}... (${bytes.length} bytes)` : `${hex} (${bytes.length} bytes)`;
+}
+
+function bytesEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+// =============================================================================
+// ロギング
+// =============================================================================
+const logEl = document.getElementById('log');
+function logLine(cls, text) {
+  const div = document.createElement('div');
+  div.className = `log-line ${cls}`;
+  div.textContent = text;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+// silentMode: 追加検証テスト内で内部 crypto 関数の冗長ログを抑制するフラグ
+// (テスト結果ログそのものは silentMode の影響を受けない)
+let silentMode = false;
+
+const log = {
+  step: (s)    => { if (!silentMode) logLine('log-step', `[STEP] ${s}`); },
+  info: (s)    => { if (!silentMode) logLine('log-info', `  ${s}`); },
+  data: (k, v) => { if (!silentMode) logLine('log-data', `    ${k}: ${v}`); },
+  ok:   (s)    => logLine('log-ok',   `[ OK ] ${s}`),
+  err:  (s)    => logLine('log-err',  `[FAIL] ${s}`),
+  warn: (s)    => logLine('log-warn', `[WARN] ${s}`),
+  blank: ()    => { if (!silentMode) logLine('', ' '); },
+  // 追加検証テスト用のロガー (silentMode の影響を受けない)
+  testHeader: (s) => logLine('log-test-header', `═══ ${s} ═══`),
+  testItem:   (s) => logLine('log-test-item',   `▶ ${s}`),
+  testDetail: (s) => logLine('log-test-detail', `   ${s}`),
+  testInfo:   (s) => logLine('log-test-info',   `  ${s}`),
+  testPass:   (s) => {
+    logLine('log-test-pass', `   ✓ ${s}`);
+    console.log(`%c[期待通り] ${s}`, 'color: #5fd38a; font-weight: bold');
+  },
+  testUnexpected: (s) => {
+    logLine('log-test-unexpected', `   ✗ ${s}`);
+    console.error(`[想定外] ${s}`);
+  },
+};
+
+// テスト用ヘルパー: 失敗するはずの処理を実行し、例外発生を「期待通り失敗」として扱う
+function expectFailure(label, fn) {
+  silentMode = true;
+  try {
+    fn();
+    log.testUnexpected(`${label}: 想定外に成功してしまった`);
+    return false;
+  } catch (e) {
+    log.testPass(`${label}: 期待通り失敗した (${e.message})`);
+    return true;
+  } finally {
+    silentMode = false;
+  }
+}
+
+// テスト用ヘルパー: 成功するはずの処理を実行し、結果の有無を「期待通り成功」として扱う
+function expectSuccess(label, fn) {
+  silentMode = true;
+  try {
+    const r = fn();
+    log.testPass(`${label}: 期待通り成功した`);
+    return r;
+  } catch (e) {
+    log.testUnexpected(`${label}: 想定外に失敗した (${e.message})`);
+    return null;
+  } finally {
+    silentMode = false;
+  }
+}
+
+function yieldFrame() {
+  return new Promise(r => setTimeout(r, 0));
+}
+
+// crypto.getRandomValues は1回 65536 byte までなので分割
+function randomBytes(n) {
+  const out = new Uint8Array(n);
+  const CHUNK = 65536;
+  for (let off = 0; off < n; off += CHUNK) {
+    crypto.getRandomValues(out.subarray(off, Math.min(off + CHUNK, n)));
+  }
+  return out;
+}
+
+// =============================================================================
+// 受信者: 永続鍵ペアの生成
+// =============================================================================
+// 受信者は初回セットアップ時に X25519 と ML-KEM-768 の2つの鍵ペアを生成し、
+// 秘密鍵を IndexedDB に保管する(本プロトタイプではメモリのみ)。
+// 公開鍵は別経路で送信者に渡す。
+function receiverGenerateKeyPairs() {
+  log.step('受信者: 永続鍵ペアの生成');
+
+  // X25519 鍵ペア
+  const x_sk = x25519.utils.randomPrivateKey();
+  const x_pk = x25519.getPublicKey(x_sk);
+  log.info('X25519 鍵ペア生成完了');
+  log.data('x_pk (公開鍵)', toHex(x_pk));
+  log.data('x_sk (秘密鍵)', toHex(x_sk));
+
+  // ML-KEM-768 鍵ペア
+  const { publicKey: m_pk, secretKey: m_sk } = ml_kem768.keygen();
+  log.info('ML-KEM-768 鍵ペア生成完了');
+  log.data('m_pk (公開鍵)', toHex(m_pk));
+  log.data('m_sk (秘密鍵)', toHex(m_sk));
+
+  return {
+    pub: { x_pk, m_pk },
+    sec: { x_sk, m_sk },
+  };
+}
+
+// =============================================================================
+// 送信者: ハイブリッド鍵交換 + ファイル暗号化 + パック
+// =============================================================================
+// 1. エフェメラル X25519 鍵ペアを生成 (毎回新規 → Forward Secrecy)
+// 2. ss_classical = X25519(eph_sk, recipient_x_pk)
+// 3. (ss_pqc, ct)  = ML-KEM-768.Encap(recipient_m_pk)
+// 4. shared = HKDF(ss_classical || ss_pqc, info="hybrid-kex/v1")
+// 5. file_key / metadata_key を HKDF で派生
+// 6. メタデータと本体をそれぞれ ChaCha20-Poly1305 で暗号化
+// 7. 設計仕様のバイナリフォーマットへパック
+function senderEncrypt(recipientPub, plaintext, metadata) {
+  log.step('送信者: ハイブリッド鍵交換 + ファイル暗号化');
+
+  // (1) エフェメラル X25519 鍵ペア
+  const eph_sk = x25519.utils.randomPrivateKey();
+  const eph_pk = x25519.getPublicKey(eph_sk);
+  log.info('エフェメラル X25519 鍵ペア生成');
+  log.data('eph_pk', toHex(eph_pk));
+
+  // (2) 古典側 ECDH
+  const ss_classical = x25519.getSharedSecret(eph_sk, recipientPub.x_pk);
+  log.info('X25519 ECDH 共有秘密を計算');
+  log.data('ss_classical', toHex(ss_classical));
+
+  // (3) ML-KEM カプセル化
+  const { cipherText: mkem_ct, sharedSecret: ss_pqc } = ml_kem768.encapsulate(recipientPub.m_pk);
+  log.info('ML-KEM-768 カプセル化');
+  log.data('mkem_ct', toHex(mkem_ct));
+  log.data('ss_pqc', toHex(ss_pqc));
+
+  // (4) ハイブリッド共有秘密の導出
+  const ikm = concat(ss_classical, ss_pqc);
+  const shared = hkdf(sha256, ikm, undefined, enc.encode(HKDF_INFO_HYBRID), KEY_LEN);
+  log.info('HKDF-SHA256 でハイブリッド共有秘密を導出');
+  log.data('shared_secret', toHex(shared));
+
+  // (5) ファイル鍵 / メタデータ鍵の派生(ドメイン分離)
+  const file_key     = hkdf(sha256, shared, undefined, enc.encode(HKDF_INFO_FILE),     KEY_LEN);
+  const metadata_key = hkdf(sha256, shared, undefined, enc.encode(HKDF_INFO_METADATA), KEY_LEN);
+  log.info('ファイル鍵 / メタデータ鍵を派生');
+  log.data('file_key', toHex(file_key));
+  log.data('metadata_key', toHex(metadata_key));
+
+  // (6) メタデータ暗号化
+  const meta_json   = enc.encode(JSON.stringify(metadata));
+  const meta_nonce  = crypto.getRandomValues(new Uint8Array(NONCE_LEN));
+  const meta_ct     = chacha20poly1305(metadata_key, meta_nonce).encrypt(meta_json);
+  log.info('メタデータを ChaCha20-Poly1305 で暗号化');
+  log.data('meta_nonce', toHex(meta_nonce));
+  log.data('meta_ct (tag含む)', toHex(meta_ct));
+
+  // (6) ファイル本体暗号化
+  const body_nonce  = crypto.getRandomValues(new Uint8Array(NONCE_LEN));
+  const body_ct     = chacha20poly1305(file_key, body_nonce).encrypt(plaintext);
+  log.info('ファイル本体を ChaCha20-Poly1305 で暗号化');
+  log.data('body_nonce', toHex(body_nonce));
+  log.data('body_ct (tag含む)', toHex(body_ct));
+
+  // (7) バイナリフォーマットへパック (設計仕様準拠)
+  // [Header 48B] [eph_x_pk 32B] [mkem_ct 1088B]
+  // [meta_len 4B(BE)] [meta_nonce 12B] [meta_ct+tag] [body_nonce 12B] [body_ct+tag]
+  const header = new Uint8Array(HEADER_LEN);
+  header.set(MAGIC, 0);
+  header[4] = VERSION;
+  header[5] = ALG_ID;
+  // header[6..47] は reserved (0 埋め)
+
+  const meta_block_len = NONCE_LEN + meta_ct.length;
+  const meta_len_buf = new Uint8Array(4);
+  new DataView(meta_len_buf.buffer).setUint32(0, meta_block_len, false); // big-endian
+
+  const packed = concat(
+    header,
+    eph_pk, mkem_ct,
+    meta_len_buf, meta_nonce, meta_ct,
+    body_nonce, body_ct
+  );
+  log.info(`パック完了: 合計 ${packed.length} bytes`);
+  log.data('header magic', dec.decode(packed.subarray(0, 4)));
+  log.data('version / algId', `0x${packed[4].toString(16).padStart(2,'0')} / 0x${packed[5].toString(16).padStart(2,'0')}`);
+
+  return packed;
+}
+
+// =============================================================================
+// 受信者: アンパック + ハイブリッド鍵交換(復号側)+ 復号
+// =============================================================================
+function receiverDecrypt(packed, recipientSec) {
+  log.step('受信者: アンパック + ハイブリッド鍵交換(復号側)+ 復号');
+
+  let off = 0;
+
+  // ヘッダーの検証
+  const header = packed.subarray(off, off + HEADER_LEN); off += HEADER_LEN;
+  if (!bytesEqual(header.subarray(0, 4), MAGIC)) {
+    throw new Error('不正なマジックバイト: ' + toHex(header.subarray(0, 4)));
+  }
+  if (header[4] !== VERSION) throw new Error(`未対応バージョン: 0x${header[4].toString(16)}`);
+  if (header[5] !== ALG_ID)  throw new Error(`未対応アルゴリズムID: 0x${header[5].toString(16)}`);
+  log.info('ヘッダー検証 OK');
+
+  // 鍵交換ブロック
+  const eph_pk  = packed.subarray(off, off + X25519_PK_LEN); off += X25519_PK_LEN;
+  const mkem_ct = packed.subarray(off, off + MLKEM_CT_LEN);  off += MLKEM_CT_LEN;
+  log.info('鍵交換ブロックを抽出');
+  log.data('eph_pk', toHex(eph_pk));
+  log.data('mkem_ct', toHex(mkem_ct));
+
+  // 共有秘密の再構築
+  const ss_classical = x25519.getSharedSecret(recipientSec.x_sk, eph_pk);
+  const ss_pqc       = ml_kem768.decapsulate(mkem_ct, recipientSec.m_sk);
+  log.info('共有秘密を復元');
+  log.data('ss_classical', toHex(ss_classical));
+  log.data('ss_pqc', toHex(ss_pqc));
+
+  const ikm = concat(ss_classical, ss_pqc);
+  const shared = hkdf(sha256, ikm, undefined, enc.encode(HKDF_INFO_HYBRID), KEY_LEN);
+  const file_key     = hkdf(sha256, shared, undefined, enc.encode(HKDF_INFO_FILE),     KEY_LEN);
+  const metadata_key = hkdf(sha256, shared, undefined, enc.encode(HKDF_INFO_METADATA), KEY_LEN);
+  log.data('shared_secret', toHex(shared));
+  log.data('file_key', toHex(file_key));
+  log.data('metadata_key', toHex(metadata_key));
+
+  // メタデータの復号
+  const meta_len = new DataView(packed.buffer, packed.byteOffset + off, 4).getUint32(0, false);
+  off += 4;
+  const meta_nonce = packed.subarray(off, off + NONCE_LEN); off += NONCE_LEN;
+  const meta_ct    = packed.subarray(off, off + (meta_len - NONCE_LEN)); off += (meta_len - NONCE_LEN);
+  const meta_pt    = chacha20poly1305(metadata_key, meta_nonce).decrypt(meta_ct);
+  const metadata   = JSON.parse(dec.decode(meta_pt));
+  log.info('メタデータ復号 OK');
+  log.data('metadata', JSON.stringify(metadata));
+
+  // 本体の復号
+  const body_nonce = packed.subarray(off, off + NONCE_LEN); off += NONCE_LEN;
+  const body_ct    = packed.subarray(off);
+  const body_pt    = chacha20poly1305(file_key, body_nonce).decrypt(body_ct);
+  log.info(`本体復号 OK (${body_pt.length} bytes)`);
+
+  return { metadata, plaintext: body_pt };
+}
+
+// =============================================================================
+// メインフロー
+// =============================================================================
+async function runRoundTrip() {
+  logEl.innerHTML = '';
+
+  // 入力の取得 (ファイル優先、なければテキスト)
+  const fileInput = document.getElementById('fileInput');
+  const textInput = document.getElementById('textInput');
+
+  let plaintext, metadata;
+  if (fileInput.files.length > 0) {
+    const f = fileInput.files[0];
+    plaintext = new Uint8Array(await f.arrayBuffer());
+    metadata = {
+      name: f.name,
+      mime: f.type || 'application/octet-stream',
+      size: f.size,
+      sentAt: new Date().toISOString(),
+    };
+    log.info(`入力モード: ファイル "${f.name}" (${f.size} bytes, ${metadata.mime})`);
+  } else {
+    plaintext = enc.encode(textInput.value);
+    metadata = {
+      name: 'message.txt',
+      mime: 'text/plain; charset=utf-8',
+      size: plaintext.length,
+      sentAt: new Date().toISOString(),
+    };
+    log.info(`入力モード: テキスト (${plaintext.length} bytes)`);
+  }
+  log.blank();
+
+  try {
+    const t0 = performance.now();
+
+    // 受信者: 鍵ペア生成
+    const recipient = receiverGenerateKeyPairs();
+    const t1 = performance.now();
+    log.info(`鍵ペア生成時間: ${(t1 - t0).toFixed(1)} ms`);
+    log.blank();
+
+    // 送信者: 暗号化 + パック
+    const packed = senderEncrypt(recipient.pub, plaintext, metadata);
+    const t2 = performance.now();
+    log.info(`暗号化+パック時間: ${(t2 - t1).toFixed(1)} ms`);
+    log.blank();
+
+    // 受信者: アンパック + 復号
+    const { metadata: meta2, plaintext: decrypted } = receiverDecrypt(packed, recipient.sec);
+    const t3 = performance.now();
+    log.info(`アンパック+復号時間: ${(t3 - t2).toFixed(1)} ms`);
+    log.blank();
+
+    // 検証: 元のデータと一致するか
+    log.step('往復検証');
+    const bodyMatch = bytesEqual(plaintext, decrypted);
+    const metaMatch = JSON.stringify(metadata) === JSON.stringify(meta2);
+
+    log.data('本体一致', `${bodyMatch} (${plaintext.length} bytes vs ${decrypted.length} bytes)`);
+    log.data('メタデータ一致', metaMatch.toString());
+
+    if (bodyMatch && metaMatch) {
+      log.blank();
+      log.ok('暗号化往復テスト成功 ✓');
+      log.info(`総時間: ${(t3 - t0).toFixed(1)} ms / パック後サイズ: ${packed.length} bytes`);
+
+      // テキストモードの場合は復号結果も表示
+      if (metadata.mime.startsWith('text/')) {
+        log.data('復号テキスト', dec.decode(decrypted));
+      }
+    } else {
+      log.err('検証失敗: データ不一致');
+    }
+  } catch (e) {
+    log.err(`例外発生: ${e.message}`);
+    console.error(e);
+  }
+}
+
+// =============================================================================
+// 追加検証 (1): 改ざん検出テスト
+// =============================================================================
+// 暗号化済みバイナリの各領域を1バイト反転し、復号が必ず失敗することを確認する。
+//   - ヘッダー: receiverDecrypt のマジックバイト検証で即 throw
+//   - eph_pk:   ss_classical が一致せず → AEAD タグ検証で throw
+//   - mkem_ct:  ML-KEM の implicit rejection により ss_pqc が壊れる → AEAD で throw
+//   - メタデータ暗号文: Poly1305 タグ検証で throw
+//   - ファイル本体暗号文: Poly1305 タグ検証で throw
+async function runTamperTests() {
+  logEl.innerHTML = '';
+  log.testHeader('改ざん検出テスト');
+  log.testInfo('暗号化後バイナリの各領域を1バイト反転し、復号が失敗することを確認');
+  log.blank();
+
+  // 準備: テスト用ペイロードを暗号化
+  silentMode = true;
+  const plaintext = enc.encode('改ざん検出テスト用のペイロード payload-for-tamper-detection-test');
+  const metadata = {
+    name: 'tamper-test.txt',
+    mime: 'text/plain',
+    size: plaintext.length,
+    sentAt: new Date().toISOString(),
+  };
+  const recipient = receiverGenerateKeyPairs();
+  const packed = senderEncrypt(recipient.pub, plaintext, metadata);
+  silentMode = false;
+
+  log.testInfo(`基準暗号文サイズ: ${packed.length} bytes`);
+  log.blank();
+
+  log.testItem('Sanity check: 改ざんなしで復号');
+  expectSuccess('改ざんなし', () => receiverDecrypt(packed, recipient.sec));
+  log.blank();
+
+  // 各領域のオフセットを計算
+  const ofH       = 0;
+  const ofEph     = HEADER_LEN;                  // 48
+  const ofMkem    = HEADER_LEN + X25519_PK_LEN;  // 80
+  const ofMetaLen = ofMkem + MLKEM_CT_LEN;       // 1168
+  const metaBlockLen = new DataView(
+    packed.buffer, packed.byteOffset + ofMetaLen, 4
+  ).getUint32(0, false);
+  const ofMetaCt  = ofMetaLen + 4 + NONCE_LEN;   // 1184
+  const metaCtLen = metaBlockLen - NONCE_LEN;
+  const ofBodyCt  = ofMetaCt + metaCtLen + NONCE_LEN;
+  const bodyCtLen = packed.length - ofBodyCt;
+
+  const targets = [
+    { name: 'ヘッダー (magic byte: offset 0)',                offset: ofH },
+    { name: `エフェメラル X25519 公開鍵 (offset ${ofEph + 5})`, offset: ofEph + 5 },
+    { name: `ML-KEM 暗号文 (offset ${ofMkem + Math.floor(MLKEM_CT_LEN/2)})`,
+      offset: ofMkem + Math.floor(MLKEM_CT_LEN / 2) },
+    { name: `暗号化メタデータ本体 (offset ${ofMetaCt + Math.floor(metaCtLen/2)})`,
+      offset: ofMetaCt + Math.floor(metaCtLen / 2) },
+    { name: `暗号化ファイル本体 (offset ${ofBodyCt + Math.floor(bodyCtLen/2)})`,
+      offset: ofBodyCt + Math.floor(bodyCtLen / 2) },
+  ];
+
+  for (const t of targets) {
+    log.testItem(t.name);
+    const tampered = new Uint8Array(packed);
+    const orig = tampered[t.offset];
+    tampered[t.offset] = orig ^ 0xFF;
+    log.testDetail(
+      `1バイト反転: 0x${orig.toString(16).padStart(2,'0')} → 0x${tampered[t.offset].toString(16).padStart(2,'0')}`
+    );
+    expectFailure(t.name, () => receiverDecrypt(tampered, recipient.sec));
+    log.blank();
+  }
+
+  log.testInfo('改ざん検出テスト完了');
+}
+
+// =============================================================================
+// 追加検証 (2): 不正な鍵での復号失敗テスト
+// =============================================================================
+// 別人の鍵ペアを生成し、x_sk/m_sk を組み替えて 3 パターンで失敗を確認する。
+// ML-KEM-768 は不正な暗号文に対して implicit rejection を行うため decap 自体は
+// throw せず、AEAD タグ検証で失敗する点に注意。
+async function runWrongKeyTests() {
+  logEl.innerHTML = '';
+  log.testHeader('不正な鍵での復号失敗テスト');
+  log.blank();
+
+  silentMode = true;
+  const plaintext = enc.encode('不正鍵テスト用のペイロード payload-for-wrong-key-test');
+  const metadata = {
+    name: 'wrongkey-test.txt',
+    mime: 'text/plain',
+    size: plaintext.length,
+    sentAt: new Date().toISOString(),
+  };
+  const r1 = receiverGenerateKeyPairs(); // 正規受信者
+  const r2 = receiverGenerateKeyPairs(); // 別人
+  const packed = senderEncrypt(r1.pub, plaintext, metadata);
+  silentMode = false;
+
+  log.testInfo(`正規受信者 x_pk: ${toHex(r1.pub.x_pk, 16)}`);
+  log.testInfo(`別人受信者  x_pk: ${toHex(r2.pub.x_pk, 16)}`);
+  log.testInfo('  ↑ 別人の鍵では復号できないことを期待');
+  log.blank();
+
+  log.testItem('Sanity check: 正規受信者の鍵で復号');
+  expectSuccess('正規鍵', () => receiverDecrypt(packed, r1.sec));
+  log.blank();
+
+  log.testItem('パターン1: X25519 秘密鍵だけ別人 (ML-KEM は正規)');
+  expectFailure('X25519のみ不正',
+    () => receiverDecrypt(packed, { x_sk: r2.sec.x_sk, m_sk: r1.sec.m_sk })
+  );
+  log.blank();
+
+  log.testItem('パターン2: ML-KEM 秘密鍵だけ別人 (X25519 は正規)');
+  expectFailure('ML-KEMのみ不正',
+    () => receiverDecrypt(packed, { x_sk: r1.sec.x_sk, m_sk: r2.sec.m_sk })
+  );
+  log.blank();
+
+  log.testItem('パターン3: 両方とも別人の鍵を使用');
+  expectFailure('両方不正', () => receiverDecrypt(packed, r2.sec));
+  log.blank();
+
+  log.testInfo('不正な鍵テスト完了');
+}
+
+// =============================================================================
+// 追加検証 (3): 大容量ファイルでの性能測定
+// =============================================================================
+// 1MB / 10MB / 50MB / 100MB のランダムバイナリで暗号化・復号往復を計測する。
+// 結果はテーブル形式で表示し、コンソールにも console.table で出力。
+async function runPerfTests() {
+  logEl.innerHTML = '';
+  log.testHeader('大容量ファイル性能測定');
+  log.testInfo('1MB / 10MB / 50MB / 100MB のランダムバイナリで暗号化・復号往復を測定');
+  log.testInfo('※ 100MB はメモリ使用量(概算 300MB+)と処理時間が大きいです');
+  log.blank();
+
+  silentMode = true;
+  const recipient = receiverGenerateKeyPairs(); // 受信者鍵は1回だけ生成して使い回す
+  silentMode = false;
+
+  const sizes = [
+    { label: '1MB',   bytes: 1   * 1024 * 1024 },
+    { label: '10MB',  bytes: 10  * 1024 * 1024 },
+    { label: '50MB',  bytes: 50  * 1024 * 1024 },
+    { label: '100MB', bytes: 100 * 1024 * 1024 },
+  ];
+
+  const results = [];
+  for (const sz of sizes) {
+    log.testItem(`${sz.label} (${sz.bytes.toLocaleString()} bytes)`);
+    await yieldFrame();
+
+    try {
+      const tGenStart = performance.now();
+      let plaintext = randomBytes(sz.bytes);
+      const tGenEnd = performance.now();
+      log.testDetail(`ランダムバイナリ生成: ${(tGenEnd - tGenStart).toFixed(1)} ms`);
+
+      const metadata = {
+        name: `bench-${sz.label}.bin`,
+        mime: 'application/octet-stream',
+        size: sz.bytes,
+        sentAt: new Date().toISOString(),
+      };
+
+      silentMode = true;
+      const tEncStart = performance.now();
+      const packed = senderEncrypt(recipient.pub, plaintext, metadata);
+      const tEncEnd = performance.now();
+      const encMs = tEncEnd - tEncStart;
+
+      const tDecStart = performance.now();
+      const { plaintext: decrypted } = receiverDecrypt(packed, recipient.sec);
+      const tDecEnd = performance.now();
+      const decMs = tDecEnd - tDecStart;
+      silentMode = false;
+
+      const matched = bytesEqual(plaintext, decrypted);
+      const totalMs = encMs + decMs;
+      const encThroughput = sz.bytes / (encMs / 1000) / (1024 * 1024);
+      const decThroughput = sz.bytes / (decMs / 1000) / (1024 * 1024);
+
+      if (matched) {
+        log.testPass(
+          `${sz.label}: 期待通り成功した (enc=${encMs.toFixed(0)}ms, dec=${decMs.toFixed(0)}ms)`
+        );
+      } else {
+        log.testUnexpected(`${sz.label}: 復号結果が元データと一致しない`);
+      }
+
+      results.push({
+        label: sz.label, bytes: sz.bytes,
+        encMs, decMs, totalMs,
+        encThroughput, decThroughput,
+        packedSize: packed.length, matched,
+      });
+
+      // 明示的に参照解除して GC を促す (100MB を引きずったまま次のサイズに行かない)
+      plaintext = null;
+    } catch (e) {
+      silentMode = false;
+      log.testUnexpected(`${sz.label}: 例外発生 ${e.message}`);
+      results.push({ label: sz.label, bytes: sz.bytes, error: e.message });
+    }
+
+    await yieldFrame();
+    log.blank();
+  }
+
+  log.testInfo('結果サマリー:');
+  appendPerfTable(results);
+  log.blank();
+  log.testInfo('大容量性能測定完了');
+
+  // ブラウザコンソール側にも整形して出力
+  console.table(results.map(r => r.error ? { size: r.label, error: r.error } : {
+    size: r.label,
+    'encrypt (ms)':           r.encMs.toFixed(1),
+    'decrypt (ms)':           r.decMs.toFixed(1),
+    'total (ms)':             r.totalMs.toFixed(1),
+    'enc throughput (MB/s)':  r.encThroughput.toFixed(1),
+    'dec throughput (MB/s)':  r.decThroughput.toFixed(1),
+    'packed size (bytes)':    r.packedSize,
+    matched:                  r.matched,
+  }));
+}
+
+function appendPerfTable(results) {
+  const table = document.createElement('table');
+  table.className = 'perf-table';
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr>
+    <th>サイズ</th>
+    <th>暗号化 (ms)</th>
+    <th>復号 (ms)</th>
+    <th>往復 (ms)</th>
+    <th>暗号化 (MB/s)</th>
+    <th>復号 (MB/s)</th>
+    <th>パック後 (bytes)</th>
+    <th>一致</th>
+  </tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const r of results) {
+    const tr = document.createElement('tr');
+    if (r.error) {
+      tr.innerHTML = `<td>${r.label}</td><td colspan="7">ERROR: ${r.error}</td>`;
+    } else {
+      tr.innerHTML = `
+        <td>${r.label}</td>
+        <td>${r.encMs.toFixed(1)}</td>
+        <td>${r.decMs.toFixed(1)}</td>
+        <td>${r.totalMs.toFixed(1)}</td>
+        <td>${r.encThroughput.toFixed(1)}</td>
+        <td>${r.decThroughput.toFixed(1)}</td>
+        <td>${r.packedSize.toLocaleString()}</td>
+        <td>${r.matched ? '✓' : '✗'}</td>
+      `;
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  logEl.appendChild(table);
+}
+
+// =============================================================================
+// 初期化
+// =============================================================================
+const statusEl = document.getElementById('status');
+const runBtn      = document.getElementById('runBtn');
+const tamperBtn   = document.getElementById('tamperBtn');
+const wrongKeyBtn = document.getElementById('wrongKeyBtn');
+const perfBtn     = document.getElementById('perfBtn');
+const clearBtn    = document.getElementById('clearBtn');
+
+// セルフテスト: ライブラリが正しくロード済みか軽く確認
+async function selfTest() {
+  try {
+    statusEl.textContent = 'ライブラリ動作確認中...';
+
+    // ML-KEM の鍵長確認
+    const kp = ml_kem768.keygen();
+    if (kp.publicKey.length !== 1184) throw new Error('ML-KEM-768 公開鍵長が不正');
+    if (kp.secretKey.length !== 2400) throw new Error('ML-KEM-768 秘密鍵長が不正');
+
+    // X25519 の鍵長確認
+    const xsk = x25519.utils.randomPrivateKey();
+    const xpk = x25519.getPublicKey(xsk);
+    if (xpk.length !== 32) throw new Error('X25519 公開鍵長が不正');
+
+    // ChaCha20-Poly1305 往復確認
+    const key   = new Uint8Array(32).fill(7);
+    const nonce = new Uint8Array(12).fill(11);
+    const pt    = enc.encode('selftest');
+    const ct    = chacha20poly1305(key, nonce).encrypt(pt);
+    const pt2   = chacha20poly1305(key, nonce).decrypt(ct);
+    if (!bytesEqual(pt, pt2)) throw new Error('ChaCha20-Poly1305 往復不一致');
+
+    // HKDF 出力長確認
+    const okm = hkdf(sha256, new Uint8Array(32), undefined, enc.encode('test'), 32);
+    if (okm.length !== 32) throw new Error('HKDF 出力長が不正');
+
+    statusEl.textContent = '✓ 全ライブラリ正常 (ml-kem-768 / x25519 / chacha20-poly1305 / hkdf-sha256)';
+    statusEl.className = 'ready';
+    runBtn.disabled      = false;
+    tamperBtn.disabled   = false;
+    wrongKeyBtn.disabled = false;
+    perfBtn.disabled     = false;
+  } catch (e) {
+    statusEl.textContent = `✗ ライブラリ初期化失敗: ${e.message}`;
+    statusEl.className = 'error';
+    console.error(e);
+  }
+}
+
+function wireButton(btn, fn) {
+  btn.addEventListener('click', () => {
+    btn.disabled = true;
+    Promise.resolve().then(fn).finally(() => { btn.disabled = false; });
+  });
+}
+wireButton(runBtn,      runRoundTrip);
+wireButton(tamperBtn,   runTamperTests);
+wireButton(wrongKeyBtn, runWrongKeyTests);
+wireButton(perfBtn,     runPerfTests);
+clearBtn.addEventListener('click', () => { logEl.innerHTML = ''; });
+
+selfTest();
+</script>
+</body>
+</html>
