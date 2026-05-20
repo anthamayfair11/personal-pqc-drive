@@ -32,15 +32,19 @@ const OUTPUT_FILENAME_SUFFIX = '.ppqd';
 const RANDOM_NAME_LEN = 8;
 
 /**
- * バックエンド API のベースパス (dist/upload.html から見た相対パス)。
+ * バックエンド API のベースパス。ビルド mode で切り替える。
  *
- * 配置例:
- *   /personal-pqc-drive/frontend/dist/upload.html  ← このページ
- *   /personal-pqc-drive/backend/upload.php         ← フェッチ先
- * の相対関係。dev 時も PHP ビルトインサーバ (php -S -t プロジェクトルート) で
- * 同じパス解決になるよう設計。
+ * - 本番 (npm run build): 'backend'
+ *   dist の中身を personal-pqc-drive/ 直下に配置するため、
+ *   setup/upload/download.html と backend/ が同階層になる。
+ *   例: https://example.com/personal-pqc-drive/upload.html
+ *       → fetch('backend/upload.php')
+ * - dev / ローカル (npm run dev など): '../../backend'
+ *   frontend/dist 階層から見た相対。ローカルで production build を PHP
+ *   サーバで動かす場合は frontend/dist/backend に ../../backend への
+ *   シンボリックリンクを張る (docs/deployment.md の「ローカル確認」参照)。
  */
-const BACKEND_BASE = '../../backend';
+const BACKEND_BASE = import.meta.env.PROD ? 'backend' : '../../backend';
 
 // =============================================================================
 // 状態 (モジュールスコープ、リロードで消失)

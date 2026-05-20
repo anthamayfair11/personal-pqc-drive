@@ -232,11 +232,12 @@ function handleError(e: unknown): void {
 // =============================================================================
 
 /**
- * バックエンド API のベースパス。
- * dist/download.html (= /personal-pqc-drive/frontend/dist/download.html) から見て
- * /personal-pqc-drive/backend/ への相対パス。
+ * バックエンド API のベースパス。ビルド mode で切り替える。
+ * - 本番 (npm run build): 'backend' (dist の中身を直下配置)
+ * - dev / ローカル: '../../backend' (frontend/dist 階層から見た相対)
+ * 詳細は upload.ts のコメントおよび docs/deployment.md を参照。
  */
-const BACKEND_BASE = '../../backend';
+const BACKEND_BASE = import.meta.env.PROD ? 'backend' : '../../backend';
 
 /**
  * URL クエリ ?id= から指定された ID のファイルをサーバーから取得し、復号フローへ流す。
