@@ -5,11 +5,18 @@ dist/
 *.log
 
 # ストレージ領域 (暗号化済み一時ファイル) は .htaccess 以外を除外
+# (.sweep.lock も storage/* に含まれて除外される)
 storage/*
 !storage/.htaccess
 
 # 本番用バックエンド設定 (DB認証情報等が入る予定)
 backend/config.php
+
+# スイープのロックファイル (storage/* で除外済みだが明示)
+storage/.sweep.lock
+
+# CLI テストスクリプト (本番デプロイには含めない)
+backend/test_sweep.php
 
 # OS / エディタの生成物
 .DS_Store

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal PQC Drive - 受信者: ファイルを復号</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #161a22;
+      --border: #2a313d;
+      --text: #e6e9ef;
+      --muted: #8a92a3;
+      --accent: #6ea8ff;
+      --ok: #5fd38a;
+      --err: #ff6b6b;
+      --code: #1b2029;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+                   "Yu Gothic", Meiryo, sans-serif;
+      line-height: 1.6;
+    }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { margin: 0 0 4px; font-size: 22px; }
+    h2 { margin: 0 0 12px; font-size: 16px; color: var(--accent); }
+    p  { margin: 0 0 12px; }
+    .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .muted { color: var(--muted); }
+    .small { font-size: 11px; }
+    .error {
+      background: rgba(255, 107, 107, 0.12);
+      border: 1px solid var(--err);
+      color: var(--err);
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      white-space: pre-wrap;
+    }
+    .success {
+      background: rgba(95, 211, 138, 0.10);
+      border: 1px solid var(--ok);
+      color: var(--ok);
+      border-radius: 6px;
+      padding: 6px 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-block;
+    }
+    button {
+      border: 0;
+      border-radius: 4px;
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      background: var(--accent);
+      color: #0a0e15;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    code {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.95em;
+      word-break: break-all;
+    }
+    a { color: var(--accent); }
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 32px 16px;
+      text-align: center;
+      background: var(--code);
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .dropzone.dragover {
+      border-color: var(--accent);
+      background: rgba(110, 168, 255, 0.06);
+    }
+    .dropzone p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+    .meta-box {
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+    .meta-box p { margin: 0 0 4px; }
+    .meta-box p:last-child { margin-bottom: 0; }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>受信者: 暗号化ファイルを復号</h1>
+  <p class="subtitle">
+    送信者から受け取った <code>.ppqd</code> ファイルを、このブラウザに保管されている
+    秘密鍵で復号します。復号はブラウザ内で完結し、サーバーには何も送信されません。
+  </p>
+
+  <div id="error" class="error" style="display: none;"></div>
+
+  <!-- 秘密鍵なし -->
+  <section id="no-key-panel" class="panel" style="display: none;">
+    <h2>鍵ペアがありません</h2>
+    <p>
+      このブラウザに受信者の鍵ペアが保管されていません。
+      先に <a href="./setup.html">setup.html</a> で鍵を生成してください。
+    </p>
+  </section>
+
+  <!-- 秘密鍵あり: 鍵情報 -->
+  <section id="key-panel" class="panel" style="display: none;">
+    <h2>復号用の鍵</h2>
+    <p id="key-created-at" class="muted"></p>
+    <p class="small muted">
+      この鍵で暗号化された <code>.ppqd</code> ファイルのみ復号できます。
+    </p>
+  </section>
+
+  <!-- URL から取得中の進捗表示 -->
+  <section id="loading-panel" class="panel" style="display: none;">
+    <h2>サーバーから取得中...</h2>
+    <p class="muted small" id="loading-id"></p>
+  </section>
+
+  <!-- 秘密鍵あり: D&D -->
+  <section id="dropzone-panel" class="panel" style="display: none;">
+    <h2>ファイルを選択</h2>
+    <p class="small muted">
+      送信者から URL を受け取った場合は <code>?id=xxxx</code> 付きで開くと自動取得されます。
+    </p>
+    <div id="dropzone" class="dropzone">
+      <p>ここに <code>.ppqd</code> ファイルをドラッグ&ドロップ、または</p>
+      <button id="select-file-btn" class="secondary">ファイルを選択</button>
+      <input type="file" id="file-input" accept=".ppqd,application/octet-stream" hidden>
+    </div>
+  </section>
+
+  <!-- 復号結果 -->
+  <section id="result-panel" class="panel" style="display: none;">
+    <div class="success">復号成功</div>
+    <p id="server-note" class="success" style="display: none;"></p>
+    <div class="meta-box">
+      <p>元ファイル名: <code id="meta-name"></code></p>
+      <p class="muted small">
+        サイズ: <span id="meta-size"></span> &nbsp;/&nbsp;
+        MIME: <code id="meta-mime"></code> &nbsp;/&nbsp;
+        送信日時: <span id="meta-sent-at"></span>
+      </p>
+    </div>
+    <div class="actions">
+      <button id="save-btn">保存</button>
+      <button id="clear-btn" class="secondary">クリア (メモリから削除)</button>
+    </div>
+    <p class="muted small" style="margin-top: 10px;">
+      ※ 「クリア」を押すか、ページをリロードすると復号済みデータはメモリから消えます。
+    </p>
+  </section>
+
+  <footer>
+    ゼロ知識: 復号はブラウザ内で完結し、平文や秘密鍵はサーバーに送信されません。<br>
+    復号データはメモリ上のみで保持されます (DevTools の Memory タブで確認可)。
+  </footer>
+</main>
+<script type="module" src="/src/download.ts"></script>
+</body>
+</html>

@@ -48,6 +48,17 @@
       font-size: 13px;
       white-space: pre-wrap;
     }
+    .success {
+      background: rgba(95, 211, 138, 0.10);
+      border: 1px solid var(--ok);
+      color: var(--ok);
+      border-radius: 6px;
+      padding: 6px 12px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-block;
+    }
     button {
       border: 0;
       border-radius: 4px;
@@ -88,7 +99,7 @@
       background: rgba(110, 168, 255, 0.06);
     }
     .dropzone p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
-    .file-info {
+    .file-info, .meta-box {
       background: var(--code);
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -96,8 +107,26 @@
       font-size: 13px;
       margin-bottom: 12px;
     }
-    .file-info p { margin: 0 0 4px; }
-    .file-info p:last-child { margin-bottom: 0; }
+    .file-info p, .meta-box p { margin: 0 0 4px; }
+    .file-info p:last-child, .meta-box p:last-child { margin-bottom: 0; }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .share-url {
+      display: block;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      word-break: break-all;
+      margin: 6px 0 10px;
+      color: var(--accent);
+    }
     footer {
       margin-top: 32px;
       padding-top: 16px;
@@ -128,13 +157,13 @@
     <input type="file" id="pubkey-input" accept=".json,application/json" hidden>
   </section>
 
-  <!-- ステップA結果 (読み込んだ公開鍵の情報) -->
+  <!-- ステップA結果 -->
   <section id="pubkey-info" class="panel" style="display: none;">
     <h2>読み込んだ公開鍵</h2>
     <p id="pubkey-created-at" class="muted"></p>
     <p>識別ID (x_pk_b64 先頭16文字): <code id="pubkey-id"></code></p>
     <p class="small muted">
-      ※ 受信者と同じ鍵かを目視確認したいときは、受信者画面の x_pk_b64 と上の識別ID を見比べてください。
+      ※ 受信者と同じ鍵かを目視確認したいときは、受信者画面の x_pk_b64 先頭と上の識別ID を見比べてください。
     </p>
     <p><a href="#" id="reload-pubkey-link">別の公開鍵を読み込む</a></p>
   </section>
@@ -155,7 +184,38 @@
         MIME: <code id="file-mime"></code>
       </p>
     </div>
-    <button id="encrypt-btn" disabled>暗号化してダウンロード</button>
+    <button id="encrypt-btn" disabled>暗号化</button>
+  </section>
+
+  <!-- 暗号化結果 -->
+  <section id="encrypt-result" class="panel" style="display: none;">
+    <div class="success">暗号化完了</div>
+    <p class="muted small" id="encrypt-stats"></p>
+    <p>結果は以下のいずれかの方法で受信者に渡せます:</p>
+    <div class="actions">
+      <button id="download-btn">ローカルにダウンロード (オフライン受け渡し用)</button>
+      <button id="upload-btn">サーバーにアップロードして URL 取得</button>
+    </div>
+    <p class="muted small">
+      ※ アップロードしたファイルは <strong>24 時間</strong>で自動削除されます。
+    </p>
+  </section>
+
+  <!-- アップロード結果 -->
+  <section id="upload-result-panel" class="panel" style="display: none;">
+    <div class="success">アップロード完了</div>
+    <div class="meta-box">
+      <p class="muted small">受信者に渡す共有 URL:</p>
+      <code class="share-url" id="share-url"></code>
+      <p class="muted small">有効期限: <span id="expire-at"></span></p>
+    </div>
+    <div class="actions">
+      <button id="copy-url-btn">URL をコピー</button>
+    </div>
+    <p class="muted small">
+      この URL を別経路 (メール / メッセンジャー等) で受信者に送ってください。
+      受信者は URL を開くだけで自動的に復号画面に遷移します。
+    </p>
   </section>
 
   <footer>

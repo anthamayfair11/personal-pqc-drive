@@ -1,0 +1,17 @@
+# storage/ ディレクトリへの直接アクセスを全面禁止
+#
+# 暗号化済みなので「中身が漏れる」リスクは無いが、download.php 経由を強制することで
+# 以下を機能させる:
+#   - 有効期限チェック
+#   - downloadCount のインクリメント
+#   - 将来の N 回ダウンロード制限
+
+<IfModule mod_authz_core.c>
+    # Apache 2.4+
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    # Apache 2.2 互換フォールバック
+    Order allow,deny
+    Deny from all
+</IfModule>

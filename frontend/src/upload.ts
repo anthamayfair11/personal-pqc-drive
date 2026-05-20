@@ -1,13 +1,14 @@
 /**
- * upload.ts - 送信者画面: 受信者公開鍵で D&D ファイルを暗号化
+ * upload.ts - 送信者画面: 受信者公開鍵で D&D ファイルを暗号化 + アップロード
  *
  * UI フロー:
- *   ステップA: 公開鍵 JSON ファイルを選択 → 厳密にバリデート → メモリへ保持
- *   ステップB: ファイルを D&D or 選択 → encryptForRecipient → .ppqd でダウンロード
+ *   ステップ A: 公開鍵 JSON ファイルを選択 → 厳密にバリデート → メモリへ保持
+ *   ステップ B: ファイル D&D / 選択 → 「暗号化」
+ *   暗号化結果: 暗号化済みデータを保持して、「ダウンロード」「サーバーへアップロード」を選択
+ *   アップロード結果: 共有 URL を表示 + クリップボードコピー
  *
- * 状態は upload.ts のモジュールスコープ変数のみで管理 (リロードで消失する)。
- * これは「送信時のエフェメラル性」と整合する: 鍵もファイルもサーバーには渡らず、
- * 送信完了後は破棄される (設計メモ エフェメラル鍵設計)。
+ * 状態 (pubKeyState, selectedFile, lastPacked) はモジュールスコープ。
+ * リロードで全消失 (送信のエフェメラル性と整合)。
  */
 
 import { encryptForRecipient } from './crypto.ts';
@@ -30,44 +31,64 @@ const OUTPUT_FILENAME_PREFIX = 'ppqd-';
 const OUTPUT_FILENAME_SUFFIX = '.ppqd';
 const RANDOM_NAME_LEN = 8;
 
+/**
+ * バックエンド API のベースパス (dist/upload.html から見た相対パス)。
+ *
+ * 配置例:
+ *   /personal-pqc-drive/frontend/dist/upload.html  ← このページ
+ *   /personal-pqc-drive/backend/upload.php         ← フェッチ先
+ * の相対関係。dev 時も PHP ビルトインサーバ (php -S -t プロジェクトルート) で
+ * 同じパス解決になるよう設計。
+ */
+const BACKEND_BASE = '../../backend';
+
 // =============================================================================
 // 状態 (モジュールスコープ、リロードで消失)
 // =============================================================================
 
 interface PubKeyState {
   pub: ReceiverPublicKeys;
-  /** JSON 内の createdAt 文字列 (ISO 8601 形式を想定) */
   createdAt: string;
-  /** UI に表示する短い識別子 (x_pk_b64 の先頭 16 文字) */
   identifier: string;
 }
 
 let pubKeyState: PubKeyState | null = null;
 let selectedFile: File | null = null;
+let lastPacked: Uint8Array | null = null;
 
 // =============================================================================
 // DOM 取得
 // =============================================================================
 
-const errorEl           = document.getElementById('error')             as HTMLDivElement;
-const stepA             = document.getElementById('step-a')            as HTMLElement;
-const pubkeyInfo        = document.getElementById('pubkey-info')       as HTMLElement;
-const stepB             = document.getElementById('step-b')            as HTMLElement;
-const loadPubkeyBtn     = document.getElementById('load-pubkey-btn')   as HTMLButtonElement;
-const pubkeyInput       = document.getElementById('pubkey-input')      as HTMLInputElement;
-const pubkeyCreatedAtEl = document.getElementById('pubkey-created-at') as HTMLParagraphElement;
-const pubkeyIdEl        = document.getElementById('pubkey-id')         as HTMLElement;
-const reloadPubkeyLink  = document.getElementById('reload-pubkey-link') as HTMLAnchorElement;
-const dropzone          = document.getElementById('dropzone')          as HTMLElement;
-const fileInput         = document.getElementById('file-input')        as HTMLInputElement;
-const selectFileBtn     = document.getElementById('select-file-btn')   as HTMLButtonElement;
-const fileInfoEl        = document.getElementById('file-info')         as HTMLElement;
-const fileNameEl        = document.getElementById('file-name')         as HTMLElement;
-const fileSizeEl        = document.getElementById('file-size')         as HTMLElement;
-const fileMimeEl        = document.getElementById('file-mime')         as HTMLElement;
-const encryptBtn        = document.getElementById('encrypt-btn')       as HTMLButtonElement;
+const errorEl            = document.getElementById('error')                as HTMLDivElement;
+const stepA              = document.getElementById('step-a')               as HTMLElement;
+const pubkeyInfo         = document.getElementById('pubkey-info')          as HTMLElement;
+const stepB              = document.getElementById('step-b')               as HTMLElement;
+const encryptResultPanel = document.getElementById('encrypt-result')       as HTMLElement;
+const uploadResultPanel  = document.getElementById('upload-result-panel')  as HTMLElement;
+const loadPubkeyBtn      = document.getElementById('load-pubkey-btn')      as HTMLButtonElement;
+const pubkeyInput        = document.getElementById('pubkey-input')         as HTMLInputElement;
+const pubkeyCreatedAtEl  = document.getElementById('pubkey-created-at')    as HTMLParagraphElement;
+const pubkeyIdEl         = document.getElementById('pubkey-id')            as HTMLElement;
+const reloadPubkeyLink   = document.getElementById('reload-pubkey-link')   as HTMLAnchorElement;
+const dropzone           = document.getElementById('dropzone')             as HTMLElement;
+const fileInput          = document.getElementById('file-input')           as HTMLInputElement;
+const selectFileBtn      = document.getElementById('select-file-btn')      as HTMLButtonElement;
+const fileInfoEl         = document.getElementById('file-info')            as HTMLElement;
+const fileNameEl         = document.getElementById('file-name')            as HTMLElement;
+const fileSizeEl         = document.getElementById('file-size')            as HTMLElement;
+const fileMimeEl         = document.getElementById('file-mime')            as HTMLElement;
+const encryptBtn         = document.getElementById('encrypt-btn')          as HTMLButtonElement;
+const encryptStatsEl     = document.getElementById('encrypt-stats')        as HTMLElement;
+const downloadBtn        = document.getElementById('download-btn')         as HTMLButtonElement;
+const uploadBtn          = document.getElementById('upload-btn')           as HTMLButtonElement;
+const shareUrlEl         = document.getElementById('share-url')            as HTMLElement;
+const expireAtEl         = document.getElementById('expire-at')            as HTMLElement;
+const copyUrlBtn         = document.getElementById('copy-url-btn')         as HTMLButtonElement;
 
-const ENCRYPT_LABEL = '暗号化してダウンロード';
+const ENCRYPT_LABEL = '暗号化';
+const UPLOAD_LABEL  = 'サーバーにアップロードして URL 取得';
+const COPY_LABEL    = 'URL をコピー';
 
 // =============================================================================
 // ユーティリティ
@@ -83,7 +104,6 @@ function clearError(): void {
   errorEl.style.display = 'none';
 }
 
-/** Base64 → Uint8Array (atob ベース)。不正な Base64 では例外が投げられる */
 function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -110,10 +130,7 @@ function formatDateTime(d: Date): string {
   );
 }
 
-/**
- * 暗号論的乱数で生成する英数字文字列。
- * 36 文字集合 × 8 文字 ≒ 41 bit のエントロピーで衝突確率は実用上十分に低い。
- */
+/** 36 文字集合 × 8 文字 ≒ 41 bit。ローカル保存時のファイル名衝突回避用 */
 function randomAlphanumeric(len: number): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = crypto.getRandomValues(new Uint8Array(len));
@@ -125,7 +142,7 @@ function randomAlphanumeric(len: number): string {
 }
 
 // =============================================================================
-// 公開鍵 JSON のバリデーション
+// 公開鍵 JSON バリデーション
 // =============================================================================
 
 class PubKeyValidationError extends Error {
@@ -138,11 +155,6 @@ class PubKeyValidationError extends Error {
   }
 }
 
-/**
- * 受け取った未検証の JSON を型と長さの両面で検証して PubKeyState に変換する。
- * 不正な箇所があれば PubKeyValidationError を field 名付きで投げる
- * (UI 側はどこが不正かを利用者に表示できる)。
- */
 function validateAndParsePubkey(json: unknown): PubKeyState {
   if (typeof json !== 'object' || json === null) {
     throw new PubKeyValidationError('root', 'JSON のルートがオブジェクトではありません');
@@ -223,17 +235,43 @@ function renderPubkeyEmpty(): void {
   stepA.style.display = 'block';
   pubkeyInfo.style.display = 'none';
   stepB.style.display = 'none';
+  encryptResultPanel.style.display = 'none';
+  uploadResultPanel.style.display = 'none';
   pubKeyState = null;
-  // フォーム要素を初期化
+  selectedFile = null;
+  lastPacked = null;
   pubkeyInput.value = '';
   fileInput.value = '';
-  selectedFile = null;
   fileInfoEl.style.display = 'none';
   encryptBtn.disabled = true;
 }
 
+function renderEncrypted(originalSize: number, packedSize: number): void {
+  encryptResultPanel.style.display = 'block';
+  uploadResultPanel.style.display = 'none';
+  encryptStatsEl.textContent =
+    `元サイズ ${formatBytes(originalSize)} → 暗号化後 ${formatBytes(packedSize)} ` +
+    `(オーバーヘッド ${formatBytes(packedSize - originalSize)})`;
+  downloadBtn.disabled = false;
+  uploadBtn.disabled = false;
+  copyUrlBtn.textContent = COPY_LABEL;
+}
+
+function renderUploaded(id: string, expireAtISO: string): void {
+  uploadResultPanel.style.display = 'block';
+  // 共有 URL: dist/upload.html と同じディレクトリの download.html に ?id= を付ける
+  const shareUrl = new URL('download.html', window.location.href);
+  shareUrl.searchParams.set('id', id);
+  shareUrlEl.textContent = shareUrl.toString();
+
+  const expireDate = new Date(expireAtISO);
+  expireAtEl.textContent = Number.isNaN(expireDate.getTime())
+    ? expireAtISO
+    : formatDateTime(expireDate);
+}
+
 // =============================================================================
-// 公開鍵読み込み
+// アクションハンドラ
 // =============================================================================
 
 async function handlePubkeyLoad(file: File): Promise<void> {
@@ -269,12 +307,13 @@ async function handlePubkeyLoad(file: File): Promise<void> {
   }
 }
 
-// =============================================================================
-// ファイル選択
-// =============================================================================
-
 function handleFileSelect(file: File): void {
   clearError();
+  // 新しいファイル選択時は前回の暗号化結果を破棄 (鮮度のために)
+  lastPacked = null;
+  encryptResultPanel.style.display = 'none';
+  uploadResultPanel.style.display = 'none';
+
   if (file.size > MAX_FILE_SIZE) {
     showError(
       `100 MB を超えるファイルは現バージョンでは対応していません ` +
@@ -294,10 +333,6 @@ function handleFileSelect(file: File): void {
   encryptBtn.disabled = false;
 }
 
-// =============================================================================
-// 暗号化 + ダウンロード
-// =============================================================================
-
 async function handleEncrypt(): Promise<void> {
   if (!pubKeyState || !selectedFile) {
     showError('内部状態エラー: 公開鍵またはファイルが選択されていません');
@@ -307,7 +342,6 @@ async function handleEncrypt(): Promise<void> {
   encryptBtn.disabled = true;
   encryptBtn.textContent = '暗号化中...';
 
-  // 暗号化処理の本体。try/finally で UI を必ず復元。
   try {
     const file = selectedFile;
     const buf = await file.arrayBuffer();
@@ -321,30 +355,8 @@ async function handleEncrypt(): Promise<void> {
     };
 
     const packed = encryptForRecipient(pubKeyState.pub, plaintext, metadata);
-
-    // Blob 経由でダウンロード。
-    // 型アサーションの理由: TypeScript 5.7+ で Uint8Array にジェネリック引数が
-    // 追加され、デフォルトは Uint8Array<ArrayBufferLike> となる。Blob constructor
-    // は Uint8Array<ArrayBuffer> のみ受け付けるため明示する。crypto.ts が返す
-    // バッファは実体として ArrayBuffer 上にあるのでランタイムでは無問題、
-    // メモリコピーも発生しない。
-    const blob = new Blob([packed as Uint8Array<ArrayBuffer>], {
-      type: 'application/octet-stream',
-    });
-    const url = URL.createObjectURL(blob);
-    const filename = `${OUTPUT_FILENAME_PREFIX}${randomAlphanumeric(RANDOM_NAME_LEN)}${OUTPUT_FILENAME_SUFFIX}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    // 参照を切って GC を促す (100MB のファイルバッファを引きずらない)
-    selectedFile = null;
-    fileInput.value = '';
-    fileInfoEl.style.display = 'none';
+    lastPacked = packed;
+    renderEncrypted(plaintext.length, packed.length);
   } catch (e) {
     console.error(e);
     if (e instanceof CryptoError) {
@@ -353,8 +365,92 @@ async function handleEncrypt(): Promise<void> {
       showError(`予期しないエラー: ${(e as Error).message ?? String(e)}`);
     }
   } finally {
-    encryptBtn.disabled = selectedFile === null;
+    encryptBtn.disabled = false;
     encryptBtn.textContent = ENCRYPT_LABEL;
+  }
+}
+
+function handleDownload(): void {
+  if (!lastPacked) {
+    showError('先に暗号化してください');
+    return;
+  }
+  clearError();
+  // Uint8Array<ArrayBuffer> アサーションは TypeScript 5.7+ の Blob 型整合のため
+  const blob = new Blob([lastPacked as Uint8Array<ArrayBuffer>], {
+    type: 'application/octet-stream',
+  });
+  const url = URL.createObjectURL(blob);
+  const filename =
+    `${OUTPUT_FILENAME_PREFIX}${randomAlphanumeric(RANDOM_NAME_LEN)}${OUTPUT_FILENAME_SUFFIX}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function handleUpload(): Promise<void> {
+  if (!lastPacked) {
+    showError('先に暗号化してください');
+    return;
+  }
+  clearError();
+  uploadBtn.disabled = true;
+  uploadBtn.textContent = 'アップロード中...';
+
+  try {
+    const formData = new FormData();
+    const blob = new Blob([lastPacked as Uint8Array<ArrayBuffer>], {
+      type: 'application/octet-stream',
+    });
+    formData.append('file', blob, 'upload.ppqd');
+
+    const response = await fetch(`${BACKEND_BASE}/upload.php`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      // エラー JSON を読み取って詳細を表示。読み取り失敗時は status のみ
+      const errPayload = await response.json().catch(() => null) as
+        | { error?: string; message?: string }
+        | null;
+      const msg = errPayload?.message ?? response.statusText;
+      const code = errPayload?.error ?? `HTTP_${response.status}`;
+      showError(`アップロード失敗 (${code}): ${msg}`);
+      return;
+    }
+
+    const result = (await response.json()) as {
+      id: string;
+      expireAt: string;
+      downloadUrl: string;
+    };
+    renderUploaded(result.id, result.expireAt);
+  } catch (e) {
+    console.error(e);
+    showError(`アップロード失敗: ネットワーク経由でサーバーに到達できませんでした`);
+  } finally {
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = UPLOAD_LABEL;
+  }
+}
+
+async function handleCopyUrl(): Promise<void> {
+  const text = shareUrlEl.textContent ?? '';
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyUrlBtn.textContent = 'コピーしました';
+    window.setTimeout(() => {
+      copyUrlBtn.textContent = COPY_LABEL;
+    }, 2000);
+  } catch (e) {
+    console.error(e);
+    showError('クリップボードへのコピーに失敗しました。URL を選択して手動でコピーしてください。');
   }
 }
 
@@ -362,7 +458,6 @@ async function handleEncrypt(): Promise<void> {
 // イベント配線
 // =============================================================================
 
-// 公開鍵読み込み
 loadPubkeyBtn.addEventListener('click', () => pubkeyInput.click());
 pubkeyInput.addEventListener('change', () => {
   const f = pubkeyInput.files?.[0];
@@ -374,20 +469,17 @@ reloadPubkeyLink.addEventListener('click', (e) => {
   renderPubkeyEmpty();
 });
 
-// ファイル選択 (ボタン経由)
 selectFileBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
   const f = fileInput.files?.[0];
   if (f) handleFileSelect(f);
 });
 
-// D&D
 dropzone.addEventListener('dragover', (e) => {
   e.preventDefault();
   dropzone.classList.add('dragover');
 });
 dropzone.addEventListener('dragleave', (e) => {
-  // dropzone から完全に離れた時だけ class 削除
   if (e.target === dropzone) {
     dropzone.classList.remove('dragover');
   }
@@ -399,14 +491,13 @@ dropzone.addEventListener('drop', (e) => {
   if (f) handleFileSelect(f);
 });
 
-// ページ全体での誤ドロップ防止 (ブラウザが画像をプレビューしてしまうのを抑制)
 window.addEventListener('dragover', (e) => e.preventDefault());
 window.addEventListener('drop', (e) => e.preventDefault());
 
-// 暗号化
-encryptBtn.addEventListener('click', () => {
-  void handleEncrypt();
-});
+encryptBtn.addEventListener('click', () => void handleEncrypt());
+downloadBtn.addEventListener('click', handleDownload);
+uploadBtn.addEventListener('click', () => void handleUpload());
+copyUrlBtn.addEventListener('click', () => void handleCopyUrl());
 
 // 初期状態
 renderPubkeyEmpty();

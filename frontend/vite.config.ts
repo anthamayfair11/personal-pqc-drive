@@ -14,9 +14,10 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       input: {
-        main:   resolve(import.meta.dirname, 'index.html'),
-        setup:  resolve(import.meta.dirname, 'setup.html'),
-        upload: resolve(import.meta.dirname, 'upload.html'),
+        main:     resolve(import.meta.dirname, 'index.html'),
+        setup:    resolve(import.meta.dirname, 'setup.html'),
+        upload:   resolve(import.meta.dirname, 'upload.html'),
+        download: resolve(import.meta.dirname, 'download.html'),
       },
     },
   },

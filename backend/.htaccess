@@ -1,0 +1,13 @@
+# backend/ ディレクトリの Apache 設定
+# - ディレクトリ一覧の表示禁止
+# - PHP のアップロードサイズ上限を 100MB に引き上げ (mod_php 環境用)
+#   PHP-FPM 環境では .user.ini が代わりに使われる
+
+Options -Indexes
+
+<IfModule mod_php.c>
+    php_value upload_max_filesize 100M
+    php_value post_max_size 110M
+    php_value memory_limit 256M
+    php_value max_execution_time 60
+</IfModule>
